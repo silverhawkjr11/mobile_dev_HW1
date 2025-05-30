@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.Vibrator
 import android.os.VibrationEffect
 import android.os.Build
+import android.util.Log
 import android.view.View
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -18,6 +19,20 @@ import kotlin.random.Random
 
 class GameActivity : AppCompatActivity() {
 
+    // Constants for game settings
+    companion object {
+        private const val TAG = "GameActivity" // For logging
+        private const val INITIAL_LIVES = 3
+        private const val OBSTACLE_SPEED_PIXELS_PER_TICK = 15 // Speed of obstacles
+        private const val OBSTACLE_GENERATION_INTERVAL_MS = 1800L // Time between new obstacles
+        private const val GAME_UPDATE_INTERVAL_MS = 50L // Game loop refresh rate
+        private const val OBSTACLE_SIZE_DP = 55 // Desired obstacle size in DP
+        private const val CAR_HITBOX_SCALE_FACTOR = 0.75f // e.g., 75% of visual size
+        private const val OBSTACLE_HITBOX_SCALE_FACTOR = 0.75f
+        private const val SCORE_PER_DODGED_OBSTACLE = 10
+        private const val SCORE_PER_TICK = 0 // Set to 1 if you want score to increase over time
+    }
+
     // UI Elements
     private lateinit var gameLayout: ConstraintLayout
     private lateinit var carImageView: ImageView
@@ -26,300 +41,326 @@ class GameActivity : AppCompatActivity() {
     private lateinit var scoreTextView: TextView
     private lateinit var livesTextView: TextView
 
-    // Game objects
-    private val obstacleList = mutableListOf<ImageView>()
-    private val gameHandler = Handler(Looper.getMainLooper())
-    private val obstacleHandler = Handler(Looper.getMainLooper())
+    // Game Objects & State
+    private val activeObstacles = mutableListOf<ImageView>()
+    private val gameLoopHandler = Handler(Looper.getMainLooper())
+    private val obstacleGenerationHandler = Handler(Looper.getMainLooper())
     private var vibrator: Vibrator? = null
 
-    // Game state
-    private var score = 0
-    private var lives = 3
-    private var gameRunning = false
-    private var currentLane = 1 // 0: left, 1: center, 2: right
-    private val lanes = intArrayOf(0, 0, 0) // Will store the lane positions
+    private var currentScore = 0
+    private var currentLives = INITIAL_LIVES
+    private var isGameRunning = false
+    private var currentCarLane = 1 // 0: left, 1: center, 2: right
 
-    // Game settings - renamed to follow Kotlin naming conventions
-    private val obstacleSpeed = 15 // Speed of obstacles moving down
-    private val obstacleInterval = 1500L // Time between obstacles (ms)
-    private val gameTick = 50L // Game update interval (ms)
+    // Lane positioning (calculated after layout)
+    private val laneCenterPositionsX = IntArray(3) // Stores X coordinates for center of each lane
+    private var screenWidthPixels = 0
+    private var carVisualWidthPixels = 0
+    private var carVisualHeightPixels = 0 // Added to store car height
+    private var obstacleVisualSizePixels = 0
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game)
 
-        // Initialize UI elements
+        initializeUIElements()
+        vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+
+        setupButtonListeners()
+
+        // Crucial: Calculate dimensions and start game *after* layout is complete
+        gameLayout.post {
+            screenWidthPixels = gameLayout.width
+            carVisualWidthPixels = carImageView.width
+            carVisualHeightPixels = carImageView.height // Get car's height
+
+            if (screenWidthPixels == 0 || carVisualWidthPixels == 0 || carVisualHeightPixels == 0) {
+                Log.e(TAG, "Layout not ready, cannot initialize game.")
+                Toast.makeText(this, "Error initializing game layout.", Toast.LENGTH_LONG).show()
+                finish() // Close activity if layout fails
+                return@post
+            }
+
+            obstacleVisualSizePixels = (OBSTACLE_SIZE_DP * resources.displayMetrics.density).toInt()
+            Log.d(TAG, "Obstacle size in pixels: $obstacleVisualSizePixels")
+
+
+            calculateLaneCenterPositions()
+            startGame()
+        }
+    }
+
+    private fun initializeUIElements() {
         gameLayout = findViewById(R.id.game_layout)
         carImageView = findViewById(R.id.car_image)
         leftButton = findViewById(R.id.left_button)
         rightButton = findViewById(R.id.right_button)
         scoreTextView = findViewById(R.id.score_text)
         livesTextView = findViewById(R.id.lives_text)
-
-        // Initialize vibrator service
-        vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-
-        // Set up click listeners for buttons
-        leftButton.setOnClickListener {
-            moveCarLeft()
-        }
-
-        rightButton.setOnClickListener {
-            moveCarRight()
-        }
-
-        // Calculate lane positions
-        calculateLanePositions()
-
-        // Start the game
-        startGame()
     }
 
-    private fun calculateLanePositions() {
-        // This will be calculated after layout is drawn
-        gameLayout.post {
-            val laneWidth = gameLayout.width / 3
-            lanes[0] = laneWidth / 2 // Left lane center
-            lanes[1] = laneWidth + laneWidth / 2 // Center lane center
-            lanes[2] = 2 * laneWidth + laneWidth / 2 // Right lane center
-
-            // Position car in center lane initially
-            positionCarInLane(currentLane)
-        }
+    private fun setupButtonListeners() {
+        leftButton.setOnClickListener { if (isGameRunning) moveCarLeft() }
+        rightButton.setOnClickListener { if (isGameRunning) moveCarRight() }
     }
 
-    private fun positionCarInLane(lane: Int) {
-        // Position the car horizontally in the specified lane
-        carImageView.translationX = (lanes[lane] - carImageView.width / 2).toFloat()
+    private fun calculateLaneCenterPositions() {
+        if (screenWidthPixels == 0) {
+            Log.e(TAG, "Screen width is zero, cannot calculate lane positions.")
+            return
+        }
+        val lanePixelWidth = screenWidthPixels / 3
+        laneCenterPositionsX[0] = lanePixelWidth / 2
+        laneCenterPositionsX[1] = lanePixelWidth + (lanePixelWidth / 2)
+        laneCenterPositionsX[2] = (2 * lanePixelWidth) + (lanePixelWidth / 2)
+        Log.d(TAG, "Calculated Lane Centers X: L0=${laneCenterPositionsX[0]}, L1=${laneCenterPositionsX[1]}, L2=${laneCenterPositionsX[2]}")
+    }
+
+    private fun positionCarInCurrentLane() {
+        if (currentCarLane < 0 || currentCarLane >= laneCenterPositionsX.size || carVisualWidthPixels == 0) {
+            Log.e(TAG, "Cannot position car: Invalid lane or car width not measured. Lane: $currentCarLane, CarWidth: $carVisualWidthPixels")
+            return
+        }
+        val targetCarCenterX = laneCenterPositionsX[currentCarLane]
+        val targetTranslationX = (targetCarCenterX - carVisualWidthPixels / 2).toFloat()
+        carImageView.translationX = targetTranslationX
+        Log.d(TAG, "Positioned car in lane $currentCarLane at translationX: $targetTranslationX (Car actual X: ${carImageView.x})")
     }
 
     private fun moveCarLeft() {
-        if (currentLane > 0) {
-            currentLane--
-            positionCarInLane(currentLane)
+        if (currentCarLane > 0) {
+            currentCarLane--
+            positionCarInCurrentLane()
         }
     }
 
     private fun moveCarRight() {
-        if (currentLane < 2) {
-            currentLane++
-            positionCarInLane(currentLane)
+        if (currentCarLane < laneCenterPositionsX.size - 1) {
+            currentCarLane++
+            positionCarInCurrentLane()
         }
     }
 
     private fun startGame() {
-        // Reset game state
-        score = 0
-        lives = 3
-        updateUI()
+        Log.d(TAG, "Starting game...")
+        currentScore = 0
+        currentLives = INITIAL_LIVES
+        updateGameUI()
 
-        // Remove any existing obstacles
-        for (obstacle in obstacleList) {
-            gameLayout.removeView(obstacle)
+        activeObstacles.forEach { gameLayout.removeView(it) }
+        activeObstacles.clear()
+
+        positionCarInCurrentLane() // Ensure car is in the correct starting lane
+
+        isGameRunning = true
+        gameLoopHandler.post(gameRunnable)
+        obstacleGenerationHandler.post(obstacleGeneratorRunnable)
+    }
+
+    private val gameRunnable = object : Runnable {
+        override fun run() {
+            if (!isGameRunning) return
+
+            moveAllObstacles()
+            checkAllCollisions()
+            currentScore += SCORE_PER_TICK // Optional: score increases over time
+            updateGameUI()
+
+            gameLoopHandler.postDelayed(this, GAME_UPDATE_INTERVAL_MS)
         }
-        obstacleList.clear()
-
-        gameRunning = true
-
-        // Start game loop
-        gameLoop()
-
-        // Start generating obstacles
-        generateObstacles()
     }
 
-    private fun gameLoop() {
-        gameHandler.postDelayed({
-            if (gameRunning) {
-                moveObstacles()
-                checkCollisions()
-                updateScore()
-                gameLoop() // Continue the loop
-            }
-        }, gameTick)
+    private val obstacleGeneratorRunnable = object : Runnable {
+        override fun run() {
+            if (!isGameRunning) return
+            spawnNewObstacle()
+            obstacleGenerationHandler.postDelayed(this, OBSTACLE_GENERATION_INTERVAL_MS)
+        }
     }
 
-    private fun generateObstacles() {
-        obstacleHandler.postDelayed({
-            if (gameRunning) {
-                createObstacle()
-                generateObstacles() // Continue generating obstacles
-            }
-        }, obstacleInterval)
+    private fun spawnNewObstacle() {
+        if (laneCenterPositionsX.all { it == 0 }) {
+            Log.w(TAG, "Lanes not initialized, skipping obstacle spawn.")
+            return
+        }
+
+        val newObstacle = ImageView(this)
+        newObstacle.setImageResource(R.drawable.obstacle) // Ensure you have this drawable
+        val layoutParams = ConstraintLayout.LayoutParams(obstacleVisualSizePixels, obstacleVisualSizePixels)
+        newObstacle.layoutParams = layoutParams
+
+        val spawnLane = Random.nextInt(laneCenterPositionsX.size) // 0, 1, or 2
+        val obstacleCenterX = laneCenterPositionsX[spawnLane]
+
+        newObstacle.translationX = (obstacleCenterX - obstacleVisualSizePixels / 2).toFloat()
+        newObstacle.translationY = -obstacleVisualSizePixels.toFloat() // Start above screen
+
+        gameLayout.addView(newObstacle)
+        activeObstacles.add(newObstacle)
+        Log.d(TAG, "Spawned obstacle in lane $spawnLane at X: ${newObstacle.translationX}")
     }
 
-    private fun createObstacle() {
-        // Create a new obstacle ImageView
-        val obstacle = ImageView(this)
-        obstacle.setImageResource(R.drawable.obstacle)
-
-        // Increase obstacle size - make them bigger
-        val params = ConstraintLayout.LayoutParams(
-            100, // width in pixels - increased from 60
-            100  // height in pixels - increased from 60
-        )
-        obstacle.layoutParams = params
-
-        // Choose a random lane
-        val lane = Random.nextInt(3)
-
-        // Add obstacle to the layout
-        gameLayout.addView(obstacle)
-        obstacleList.add(obstacle)
-
-        // Position obstacle at the top of the chosen lane
-        obstacle.translationX = (lanes[lane] - params.width / 2).toFloat()
-        obstacle.translationY = -params.height.toFloat()
-    }
-    private fun moveObstacles() {
-        // Move all obstacles down
-        val iterator = obstacleList.iterator()
+    private fun moveAllObstacles() {
+        val iterator = activeObstacles.iterator()
         while (iterator.hasNext()) {
             val obstacle = iterator.next()
-            obstacle.translationY += obstacleSpeed
+            obstacle.translationY += OBSTACLE_SPEED_PIXELS_PER_TICK
 
-            // Remove obstacles that go off screen
             if (obstacle.translationY > gameLayout.height) {
-                // First remove from view
                 gameLayout.removeView(obstacle)
-                // Then remove from our list
                 iterator.remove()
-                // Increase score when an obstacle passes successfully
-                score += 10
+                currentScore += SCORE_PER_DODGED_OBSTACLE
+                // updateGameUI() will be called by the main game loop
+                Log.d(TAG, "Obstacle passed. Score: $currentScore")
             }
         }
     }
 
-    private fun checkCollisions() {
-        if (obstacleList.isEmpty()) return // No obstacles to check
+    private fun checkAllCollisions() {
+        if (carVisualWidthPixels == 0 || carVisualHeightPixels == 0) return // Car not measured
 
-        // Get car bounds with a smaller hitbox for more accurate collision
-        val carWidth = carImageView.width * 0.8f // 80% of car width
-        val carHeight = carImageView.height * 0.8f // 80% of car height
-        val carCenterX = carImageView.translationX + (carImageView.width / 2)
-        val carCenterY = carImageView.translationY + (carImageView.height / 2)
+        // Car's hitbox (adjust scale factor for leniency)
+        val carHitboxWidth = carVisualWidthPixels * CAR_HITBOX_SCALE_FACTOR
+        val carHitboxHeight = carVisualHeightPixels * CAR_HITBOX_SCALE_FACTOR
 
-        val carLeft = carCenterX - (carWidth / 2)
-        val carRight = carCenterX + (carWidth / 2)
-        val carTop = carCenterY - (carHeight / 2)
-        val carBottom = carCenterY + (carHeight / 2)
+        // Car's visual position: carImageView.getX() and carImageView.getY() give the top-left
+        // Note: carImageView.getX() includes its translationX relative to its initial layout position.
+        val carVisualLeft = carImageView.x
+        val carVisualTop = carImageView.y
 
-        // Check collision with each obstacle
-        val iterator = obstacleList.iterator()
+        val carHitboxLeft = carVisualLeft + (carVisualWidthPixels - carHitboxWidth) / 2f
+        val carHitboxRight = carHitboxLeft + carHitboxWidth
+        val carHitboxTop = carVisualTop + (carVisualHeightPixels - carHitboxHeight) / 2f
+        val carHitboxBottom = carHitboxTop + carHitboxHeight
+
+        // Log car hitbox for debugging (can be verbose)
+        // Log.d(TAG, "Car Hitbox - L:$carHitboxLeft, R:$carHitboxRight, T:$carHitboxTop, B:$carHitboxBottom (Visual L:${carImageView.x} T:${carImageView.y})")
+
+
+        val iterator = activeObstacles.iterator()
         while (iterator.hasNext()) {
             val obstacle = iterator.next()
+            if (obstacle.width == 0 || obstacle.height == 0) continue // Obstacle not measured
 
-            // Skip collision check for obstacles below the screen (they'll be removed in moveObstacles)
-            if (obstacle.translationY > gameLayout.height) {
-                continue
-            }
+            val obstacleCurrentWidth = obstacle.width
+            val obstacleCurrentHeight = obstacle.height
 
-            val obstacleCenterX = obstacle.translationX + (obstacle.width / 2)
-            val obstacleCenterY = obstacle.translationY + (obstacle.height / 2)
+            val obstacleHitboxWidth = obstacleCurrentWidth * OBSTACLE_HITBOX_SCALE_FACTOR
+            val obstacleHitboxHeight = obstacleCurrentHeight * OBSTACLE_HITBOX_SCALE_FACTOR
 
-            // Use 80% of obstacle size for more accurate collision
-            val obstacleWidth = obstacle.width * 0.8f
-            val obstacleHeight = obstacle.height * 0.8f
+            // Obstacle's visual position: obstacle.getX() and obstacle.getY()
+            val obstacleVisualLeft = obstacle.x
+            val obstacleVisualTop = obstacle.y
 
-            val obstacleLeft = obstacleCenterX - (obstacleWidth / 2)
-            val obstacleRight = obstacleCenterX + (obstacleWidth / 2)
-            val obstacleTop = obstacleCenterY - (obstacleHeight / 2)
-            val obstacleBottom = obstacleCenterY + (obstacleHeight / 2)
+            val obstacleHitboxLeft = obstacleVisualLeft + (obstacleCurrentWidth - obstacleHitboxWidth) / 2f
+            val obstacleHitboxRight = obstacleHitboxLeft + obstacleHitboxWidth
+            val obstacleHitboxTop = obstacleVisualTop + (obstacleCurrentHeight - obstacleHitboxHeight) / 2f
+            val obstacleHitboxBottom = obstacleHitboxTop + obstacleHitboxHeight
 
-            // Check if car and obstacle overlap - using smaller hitboxes
-            if (carRight > obstacleLeft && carLeft < obstacleRight &&
-                carBottom > obstacleTop && carTop < obstacleBottom) {
+            // Log obstacle hitbox for debugging (can be verbose)
+            // Log.d(TAG, "Obstacle Hitbox - L:$obstacleHitboxLeft, R:$obstacleHitboxRight, T:$obstacleHitboxTop, B:$obstacleHitboxBottom (Visual L:${obstacle.x} T:${obstacle.y})")
 
-                // Collision detected - remove obstacle from view and list
+
+            // Simple AABB (Axis-Aligned Bounding Box) collision check
+            if (carHitboxRight > obstacleHitboxLeft &&
+                carHitboxLeft < obstacleHitboxRight &&
+                carHitboxBottom > obstacleHitboxTop &&
+                carHitboxTop < obstacleHitboxBottom) {
+
+                Log.i(TAG, "Collision detected with obstacle at X:${obstacle.x}, Y:${obstacle.y}")
                 gameLayout.removeView(obstacle)
                 iterator.remove()
-
-                handleCollision()
-                break // Only handle one collision per frame
+                processCollision()
+                break // Process one collision per frame
             }
         }
     }
 
-    // Modified to not take an obstacle parameter
-    private fun handleCollision() {
-        // Decrease lives
-        lives--
+    private fun processCollision() {
+        currentLives--
+        triggerVibration()
+        Toast.makeText(this, getString(R.string.crash_message, currentLives), Toast.LENGTH_SHORT).show()
+        // updateGameUI() will be called by the main game loop shortly
 
-        // Vibrate phone
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator?.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator?.vibrate(500)
-        }
-
-        // Show toast message
-        Toast.makeText(this, getString(R.string.crash_message, lives), Toast.LENGTH_SHORT).show()
-
-        // Update UI
-        updateUI()
-
-        // Check if game over
-        if (lives <= 0) {
+        if (currentLives <= 0) {
             gameOver()
         }
     }
 
-
-    private fun gameOver() {
-        gameRunning = false
-
-        // Save high score if current score is higher
-        val sharedPref = getSharedPreferences("game_prefs", MODE_PRIVATE)
-        val highScore = sharedPref.getInt("high_score", 0)
-
-        if (score > highScore) {
-            with(sharedPref.edit()) {
-                putInt("high_score", score)
-                apply()
+    private fun triggerVibration() {
+        if (vibrator?.hasVibrator() == true) { // Check if vibrator exists
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(200)
             }
         }
+    }
 
-        // Show game over message
-//        Toast.makeText(this, getString(R.string.game_over_message, score), Toast.LENGTH_LONG).show()
-        Toast.makeText(this, getString(R.string.game_over_message, score), Toast.LENGTH_LONG).show()
-        // Restart the game after a delay (endless game)
+    private fun gameOver() {
+        Log.i(TAG, "Game Over. Final Score: $currentScore")
+        isGameRunning = false
+        gameLoopHandler.removeCallbacks(gameRunnable)
+        obstacleGenerationHandler.removeCallbacks(obstacleGeneratorRunnable)
+
+        saveHighScore()
+        Toast.makeText(this, getString(R.string.game_over_message, currentScore), Toast.LENGTH_LONG).show()
+
+        // Option: Go back to MainActivity or offer restart after a delay
         Handler(Looper.getMainLooper()).postDelayed({
-            startGame()
-        }, 3000)
+            // For now, just finish GameActivity. You can restart or go to MainActivity.
+            // finish()
+            // To restart the game:
+            startGame() // This will restart the game endlessly as per original logic
+        }, 3000) // 3-second delay
     }
 
-    private fun updateScore() {
-        score++
-        updateUI()
+    private fun saveHighScore() {
+        val sharedPref = getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
+        val highScore = sharedPref.getInt("high_score", 0)
+        if (currentScore > highScore) {
+            with(sharedPref.edit()) {
+                putInt("high_score", currentScore)
+                apply()
+                Log.i(TAG, "New high score saved: $currentScore")
+            }
+        }
     }
 
-    private fun updateUI() {
-        // Update score and lives text
-        scoreTextView.text = getString(R.string.score_format, score)
-        livesTextView.text = getString(R.string.lives_format, lives)
+    private fun updateGameUI() {
+        scoreTextView.text = getString(R.string.score_format, currentScore)
+        livesTextView.text = getString(R.string.lives_format, currentLives)
     }
 
     override fun onPause() {
         super.onPause()
-        // Pause the game when activity is paused
-        gameRunning = false
+        if (isGameRunning) {
+            Log.d(TAG, "Game paused.")
+            isGameRunning = false // Pause game logic
+            gameLoopHandler.removeCallbacks(gameRunnable)
+            obstacleGenerationHandler.removeCallbacks(obstacleGeneratorRunnable)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        // Resume the game if it was running
-        if (!gameRunning && lives > 0) {
-            gameRunning = true
-            gameLoop()
-            generateObstacles()
+        // Only resume if the game was previously running and layout is ready
+        // and it's not already in a game over -> restart sequence.
+        if (!isGameRunning && currentLives > 0 && screenWidthPixels > 0) {
+            Log.d(TAG, "Game resumed.")
+            isGameRunning = true
+            gameLoopHandler.post(gameRunnable) // Restart handlers
+            obstacleGenerationHandler.post(obstacleGeneratorRunnable)
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Remove callbacks to prevent memory leaks
-        gameHandler.removeCallbacksAndMessages(null)
-        obstacleHandler.removeCallbacksAndMessages(null)
+        Log.d(TAG, "GameActivity destroyed. Cleaning up handlers.")
+        isGameRunning = false
+        gameLoopHandler.removeCallbacksAndMessages(null)
+        obstacleGenerationHandler.removeCallbacksAndMessages(null)
     }
 }
