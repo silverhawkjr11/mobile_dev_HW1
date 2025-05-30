@@ -265,6 +265,7 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+
     private fun gameOver() {
         gameRunning = false
 
