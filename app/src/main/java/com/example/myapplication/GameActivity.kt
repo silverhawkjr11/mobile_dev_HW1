@@ -23,8 +23,8 @@ class GameActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "GameActivity" // For logging
         private const val INITIAL_LIVES = 3
-        private const val OBSTACLE_SPEED_PIXELS_PER_TICK = 15 // Speed of obstacles
-        private const val OBSTACLE_GENERATION_INTERVAL_MS = 1800L // Time between new obstacles
+        private const val OBSTACLE_SPEED_PIXELS_PER_TICK = 40 // Speed of obstacles
+        private const val OBSTACLE_GENERATION_INTERVAL_MS = 1000L // Time between new obstacles
         private const val GAME_UPDATE_INTERVAL_MS = 50L // Game loop refresh rate
         private const val OBSTACLE_SIZE_DP = 55 // Desired obstacle size in DP
         private const val CAR_HITBOX_SCALE_FACTOR = 0.75f // e.g., 75% of visual size
@@ -118,20 +118,38 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun positionCarInCurrentLane() {
+        Log.d(TAG, "positionCarInCurrentLane() CALLED for lane: $currentCarLane")
         if (currentCarLane < 0 || currentCarLane >= laneCenterPositionsX.size || carVisualWidthPixels == 0) {
-            Log.e(TAG, "Cannot position car: Invalid lane or car width not measured. Lane: $currentCarLane, CarWidth: $carVisualWidthPixels")
+            Log.e(TAG, "CANNOT position car: Invalid lane ($currentCarLane), or car width ($carVisualWidthPixels), or screen width ($screenWidthPixels) is zero.")
+            Log.e(TAG, "Lane Centers X: L0=${laneCenterPositionsX.getOrNull(0)}, L1=${laneCenterPositionsX.getOrNull(1)}, L2=${laneCenterPositionsX.getOrNull(2)}")
             return
         }
+
+        // The center of the lane we are aiming for.
         val targetCarCenterX = laneCenterPositionsX[currentCarLane]
-        val targetTranslationX = (targetCarCenterX - carVisualWidthPixels / 2).toFloat()
+
+        // THE FIX:
+        // Calculate the translation needed to move the car from the screen's center
+        // to the lane's center.
+        val targetTranslationX = (targetCarCenterX - screenWidthPixels / 2).toFloat()
+
+        Log.d(TAG, "Car current translationX BEFORE setting: ${carImageView.translationX}, Car current visual X BEFORE: ${carImageView.x}")
+        Log.d(TAG, "For lane $currentCarLane: TargetCenter=$targetCarCenterX, ScreenCenter=${screenWidthPixels/2}. Calculated targetTranslationX: $targetTranslationX")
+
         carImageView.translationX = targetTranslationX
-        Log.d(TAG, "Positioned car in lane $currentCarLane at translationX: $targetTranslationX (Car actual X: ${carImageView.x})")
+
+        Log.d(TAG, "Car translationX AFTER setting: ${carImageView.translationX}, Car visual X AFTER setting: ${carImageView.x} (for lane $currentCarLane)")
     }
 
+
     private fun moveCarLeft() {
+        Log.d(TAG, "moveCarLeft() TAPPED. currentCarLane BEFORE: $currentCarLane, isGameRunning: $isGameRunning")
         if (currentCarLane > 0) {
             currentCarLane--
+            Log.d(TAG, "moveCarLeft() - currentCarLane AFTER decrement: $currentCarLane")
             positionCarInCurrentLane()
+        } else {
+            Log.d(TAG, "moveCarLeft() - Condition not met (currentCarLane was already 0 or less). currentCarLane: $currentCarLane")
         }
     }
 
