@@ -8,80 +8,102 @@
     tools:context=".MainActivity">
 
     <TextView
-        android:id="@+id/title_text"
+        android:id="@+id/main_menu_title"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
         android:text="@string/game_title"
-        android:textSize="32sp"
+        android:textSize="34sp"
         android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="48dp"/>
 
     <TextView
-        android:id="@+id/high_score_text"
+        android:id="@+id/high_score_text_main"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
         android:text="@string/high_score_format"
-        android:textSize="24sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/title_text" />
-
-    <TextView
-        android:id="@+id/previous_scores_title_text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="Recent Scores:"
         android:textSize="20sp"
-        android:textStyle="bold"
+        app:layout_constraintTop_toBottomOf="@id/main_menu_title"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/high_score_text" />
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="16dp"/>
 
-    <TextView
-        android:id="@+id/previous_scores_list_text"
+    <Button
+        android:id="@+id/button_mode_slow_button"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:text="@string/button_mode"
         android:textSize="18sp"
-        android:lineSpacingMultiplier="1.2"
-        android:gravity="center_horizontal"
-        app:layout_constraintTop_toBottomOf="@+id/previous_scores_title_text"
+        app:layout_constraintTop_toBottomOf="@id/high_score_text_main"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        tools:text="1. 1230\n2. 1000\n3. 800" />
+        android:layout_marginTop="40dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:padding="12dp"/>
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/speed_slow"
+        android:textSize="14sp"
+        app:layout_constraintTop_toBottomOf="@id/button_mode_slow_button"
+        app:layout_constraintStart_toStartOf="@id/button_mode_slow_button"
+        app:layout_constraintEnd_toEndOf="@id/button_mode_slow_button"
+        android:layout_marginTop="4dp"/>
 
 
     <Button
-        android:id="@+id/start_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/start_game"
-        android:textSize="20sp"
-        android:paddingStart="32dp"
-        android:paddingEnd="32dp"
-        android:paddingTop="16dp"
-        android:paddingBottom="16dp"
-        android:layout_marginBottom="24dp"
-        app:layout_constraintBottom_toTopOf="@+id/instructions_text"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <TextView
-        android:id="@+id/instructions_text"
+        android:id="@+id/button_mode_fast_button"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:text="@string/button_mode"
+        android:textSize="18sp"
+        app:layout_constraintTop_toBottomOf="@id/button_mode_slow_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="40dp"
         android:layout_marginStart="32dp"
         android:layout_marginEnd="32dp"
-        android:layout_marginBottom="32dp"
-        android:text="@string/instructions"
-        android:textAlignment="center"
-        android:textSize="16sp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:padding="12dp"/>
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/speed_fast"
+        android:textSize="14sp"
+        app:layout_constraintTop_toBottomOf="@id/button_mode_fast_button"
+        app:layout_constraintStart_toStartOf="@id/button_mode_fast_button"
+        app:layout_constraintEnd_toEndOf="@id/button_mode_fast_button"
+        android:layout_marginTop="4dp"/>
+
+
+    <Button
+        android:id="@+id/sensor_mode_button"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/sensor_mode"
+        android:textSize="18sp"
+        app:layout_constraintTop_toBottomOf="@id/button_mode_fast_button"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        android:layout_marginTop="40dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:padding="12dp"/>
+
+    <Button
+        android:id="@+id/high_scores_button"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/view_high_scores"
+        android:textSize="18sp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginBottom="32dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:padding="12dp"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

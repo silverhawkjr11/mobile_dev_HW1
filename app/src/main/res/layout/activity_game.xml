@@ -8,38 +8,74 @@
     android:background="@color/road_color"
     tools:context=".GameActivity">
 
+    <!-- Guidelines for 5 lanes (4 dividers) -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_lane_1_divider"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.20" />
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_lane_2_divider"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.40" />
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_lane_3_divider"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.60" />
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_lane_4_divider"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.80" />
+
+    <!-- Road lane dividers -->
     <View
-        android:id="@+id/left_divider"
+        android:id="@+id/divider_1"
         android:layout_width="4dp"
         android:layout_height="0dp"
         android:background="@color/lane_divider_color"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="@id/guideline_left_lane_divider"
+        app:layout_constraintStart_toStartOf="@id/guideline_lane_1_divider"
         app:layout_constraintTop_toTopOf="parent" />
 
     <View
-        android:id="@+id/right_divider"
+        android:id="@+id/divider_2"
         android:layout_width="4dp"
         android:layout_height="0dp"
         android:background="@color/lane_divider_color"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="@id/guideline_right_lane_divider"
+        app:layout_constraintStart_toStartOf="@id/guideline_lane_2_divider"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/guideline_left_lane_divider"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        app:layout_constraintGuide_percent="0.33" />
+    <View
+        android:id="@+id/divider_3"
+        android:layout_width="4dp"
+        android:layout_height="0dp"
+        android:background="@color/lane_divider_color"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guideline_lane_3_divider"
+        app:layout_constraintTop_toTopOf="parent" />
 
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/guideline_right_lane_divider"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        app:layout_constraintGuide_percent="0.67" />
+    <View
+        android:id="@+id/divider_4"
+        android:layout_width="4dp"
+        android:layout_height="0dp"
+        android:background="@color/lane_divider_color"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guideline_lane_4_divider"
+        app:layout_constraintTop_toTopOf="parent" />
 
+
+    <!-- Player's car (existing) -->
     <ImageView
         android:id="@+id/car_image"
         android:layout_width="50dp"
@@ -52,6 +88,7 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.85" />
 
+    <!-- Score, Lives, Pause Button (existing) -->
     <TextView
         android:id="@+id/score_text"
         android:layout_width="wrap_content"
@@ -78,6 +115,19 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- NEW: Odometer TextView -->
+    <TextView
+        android:id="@+id/distance_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/distance_format"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        app:layout_constraintTop_toBottomOf="@id/score_text"
+        app:layout_constraintStart_toStartOf="@id/score_text"/>
+
+
     <ImageButton
         android:id="@+id/pause_button"
         android:layout_width="50dp"
@@ -91,6 +141,7 @@
         app:layout_constraintStart_toEndOf="@+id/score_text"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- Control buttons (existing) -->
     <ImageButton
         android:id="@+id/left_button"
         android:layout_width="80dp"
@@ -119,6 +170,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- Pause Screen Overlay (existing) -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/pause_screen_layout"
         android:layout_width="0dp"
@@ -129,7 +181,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        tools:visibility="visible">
+        tools:visibility="gone">
 
         <TextView
             android:id="@+id/paused_text"
@@ -160,7 +212,5 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
-
     </androidx.constraintlayout.widget.ConstraintLayout>
-
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -11,4 +11,12 @@
     <string name="player_car">Player Car</string>
     <string name="crash_message">Crash! Lives left: %1$d</string>
     <string name="game_over_message">Game Over! Final Score: %1$d</string>
+    <string name="menu_title">Select Game Mode</string>
+    <string name="button_mode">Button Controls</string>
+    <string name="sensor_mode">Tilt Controls</string>
+    <string name="speed_slow">Slow</string>
+    <string name="speed_fast">Fast</string>
+    <string name="view_high_scores">View High Scores</string>
+    <string name="distance_format">Distance: %1$d m</string>
+    <string name="coin_collected">Coin!</string>
 </resources>
