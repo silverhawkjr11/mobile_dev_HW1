@@ -25,45 +25,40 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.SoundPool
 import android.media.AudioAttributes
+import androidx.annotation.RequiresApi
 import java.io.IOException
+import kotlin.math.abs // Import abs for absolute value
 
 class GameActivity : AppCompatActivity(), SensorEventListener {
 
     companion object {
-        private const val TAG = "GameActivity"
+        private const val TAG = "GameActivity_TiltDebug" // Changed TAG for focused debugging
         private const val INITIAL_LIVES = 3
-        private const val OBSTACLE_GENERATION_INTERVAL_MS = 1800L // Can be adjusted by speed factor
+        private const val OBSTACLE_GENERATION_INTERVAL_MS = 1800L
         private const val GAME_UPDATE_INTERVAL_MS = 50L
-        private const val OBSTACLE_SIZE_DP = 50 // Slightly smaller for more lanes
-        private const val CAR_HITBOX_SCALE_FACTOR = 0.70f // Adjusted for potentially tighter spaces
+        private const val OBSTACLE_SIZE_DP = 50
+        private const val CAR_HITBOX_SCALE_FACTOR = 0.70f
         private const val OBSTACLE_HITBOX_SCALE_FACTOR = 0.70f
         private const val SCORE_PER_DODGED_OBSTACLE = 10
-        private const val SCORE_PER_COIN = 25 // Score for collecting a coin
-        private const val SCORE_PER_TICK = 0 // Set to 1 for time based score
+        private const val SCORE_PER_COIN = 25
+        private const val SCORE_PER_TICK = 0
 
-        // Game Mode and Speed Constants (from MainActivity)
-        // const val EXTRA_GAME_MODE = "extra_game_mode" (defined in MainActivity)
-        // const val EXTRA_GAME_SPEED = "extra_game_speed" (defined in MainActivity)
-        // const val MODE_BUTTONS = "mode_buttons" (defined in MainActivity)
-        // const val MODE_SENSOR = "mode_sensor" (defined in MainActivity)
-        // const val SPEED_SLOW = "slow" (defined in MainActivity)
-        // const val SPEED_FAST = "fast" (defined in MainActivity)
+        // Tilt Control Parameters - **ADJUST THESE VALUES**
+        private const val ROLL_SENSITIVITY_DEGREES = 20.0f // Max roll in degrees (e.g., 20-30 deg) for full lane span
+        private const val TILT_DEAD_ZONE_DEGREES = 3.0f   // Ignore tilts smaller than this (in degrees)
+        private const val SENSOR_UPDATE_DEBOUNCE_MS = 100L // How often to process sensor for lane change
 
-        private const val SENSOR_SENSITIVITY_ROLL_MAP = (Math.PI / 6.0).toFloat() // e.g., map +/-30deg roll to full lane span
-        private const val TILT_DEAD_ZONE = 0.08f // Radians, ignore small tilts around center for stability
-        private const val PITCH_SPEED_THRESHOLD = 0.3f // Radians for bonus speed
+        private const val PITCH_SPEED_THRESHOLD_DEGREES = 15.0f // Tilt for speed change (degrees)
         private const val SPEED_FACTOR_BONUS_FAST = 1.3f
         private const val SPEED_FACTOR_BONUS_SLOW = 0.7f
 
-
         private const val PREVIOUS_SCORES_KEY = "previous_scores"
         private const val MAX_SAVED_SCORES = 10
-
-        private const val MAX_LANES = 5 // ***** UPDATED FOR 5 LANES *****
-        private var BASE_OBSTACLE_SPEED_PIXELS_PER_TICK = 15 // Default base speed, will be adjusted
+        private const val MAX_LANES = 5
+        private var BASE_OBSTACLE_SPEED_PIXELS_PER_TICK = 15
     }
 
-    // UI Elements
+    // ... (Keep all other existing UI elements, game state variables, etc.)
     private lateinit var gameLayout: ConstraintLayout
     private lateinit var carImageView: ImageView
     private lateinit var leftButton: ImageButton
@@ -73,11 +68,10 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var pauseButton: ImageButton
     private lateinit var pauseScreenLayout: ConstraintLayout
     private lateinit var resumeButton: Button
-    private lateinit var distanceTextView: TextView // For Odometer
+    private lateinit var distanceTextView: TextView
 
-    // Game Objects & State
     private val activeObstacles = mutableListOf<ImageView>()
-    private val activeCoins = mutableListOf<ImageView>() // For Coins
+    private val activeCoins = mutableListOf<ImageView>()
     private val gameLoopHandler = Handler(Looper.getMainLooper())
     private val obstacleGenerationHandler = Handler(Looper.getMainLooper())
     private var vibrator: Vibrator? = null
@@ -87,48 +81,44 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     private var isGameEffectivelyRunning = false
     private var isGamePausedManually = false
 
-    private var currentCarLane = MAX_LANES / 2 // Start in the middle lane (e.g., lane 2 for 5 lanes)
-    private val laneCenterPositionsX = IntArray(MAX_LANES) // ***** UPDATED FOR 5 LANES *****
+    private var currentCarLane = MAX_LANES / 2
+    private val laneCenterPositionsX = IntArray(MAX_LANES)
     private var screenWidthPixels = 0
     private var carVisualWidthPixels = 0
     private var carVisualHeightPixels = 0
     private var obstacleVisualSizePixels = 0
-    private var coinVisualSizePixels = 0 // For coins
+    private var coinVisualSizePixels = 0
 
-    // Game Mode and Speed
     private var currentGameMode: String = MainActivity.MODE_BUTTONS
-    private var baseSpeedFactor: Float = 1.0f // From slow/fast menu selection
-    private var dynamicBonusSpeedFactor: Float = 1.0f // From pitch tilt
+    private var baseSpeedFactor: Float = 1.0f
+    private var dynamicBonusSpeedFactor: Float = 1.0f
 
-    // Sensor related variables
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     private var magnetometer: Sensor? = null
     private val accelerometerReading = FloatArray(3)
     private val magnetometerReading = FloatArray(3)
     private val rotationMatrix = FloatArray(9)
-    private val orientationAngles = FloatArray(3)
-    private var lastSensorLaneUpdateTime: Long = 0 // To throttle sensor-based lane changes
+    private val orientationAngles = FloatArray(3) // Values are in RADIANS
+    private var lastSensorLaneUpdateTime: Long = 0
 
-    // Sound related variables
     private lateinit var soundPool: SoundPool
     private var crashSoundId: Int = 0
     private var coinSoundId: Int = 0
     private var soundPoolLoadedCount = 0
-    private val totalSoundsToLoad = 2 // crash + coin
+    private val totalSoundsToLoad = 2
 
-    // Odometer
     private var distanceTravelled = 0
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_game)
+        setContentView(R.layout.activity_game) // Make sure this is activity_game_xml_5lanes
 
         currentGameMode = intent.getStringExtra(MainActivity.EXTRA_GAME_MODE) ?: MainActivity.MODE_BUTTONS
         val speedSetting = intent.getStringExtra(MainActivity.EXTRA_GAME_SPEED) ?: MainActivity.SPEED_SLOW
-        baseSpeedFactor = if (speedSetting == MainActivity.SPEED_FAST) 1.5f else 1.0f // SPEED_FACTOR_FAST or _SLOW
-        BASE_OBSTACLE_SPEED_PIXELS_PER_TICK = (15 * baseSpeedFactor).toInt() // Adjust base speed
+        baseSpeedFactor = if (speedSetting == MainActivity.SPEED_FAST) 1.5f else 1.0f
+        BASE_OBSTACLE_SPEED_PIXELS_PER_TICK = (15 * baseSpeedFactor).toInt()
 
         initializeUIElements()
         vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
@@ -149,7 +139,7 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
             carVisualWidthPixels = carImageView.width
             carVisualHeightPixels = carImageView.height
             obstacleVisualSizePixels = (OBSTACLE_SIZE_DP * resources.displayMetrics.density).toInt()
-            coinVisualSizePixels = (OBSTACLE_SIZE_DP * 0.6f * resources.displayMetrics.density).toInt() // Coins smaller
+            coinVisualSizePixels = (OBSTACLE_SIZE_DP * 0.6f * resources.displayMetrics.density).toInt()
 
             if (screenWidthPixels == 0 || carVisualWidthPixels == 0 || carVisualHeightPixels == 0) {
                 Log.e(TAG, "Layout not ready, cannot initialize game.")
@@ -158,11 +148,12 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
                 return@post
             }
             calculateLaneCenterPositions()
-            currentCarLane = MAX_LANES / 2 // Recalculate starting lane after positions are set
+            currentCarLane = MAX_LANES / 2
             startGame()
         }
     }
 
+    // ... (Keep initializeUIElements, setupButtonListeners, togglePauseGame, calculateLaneCenterPositions, positionCarInCurrentLane, moveCarLeft, moveCarRight, startGame, gameRunnable, obstacleGeneratorRunnable, spawnNewObstacle, spawnNewCoin, moveAllObstacles, moveAllCoins, checkAllCollisions, checkCoinCollisions, processCollision, triggerVibration, gameOver, updateHighScore, saveScoreToList, updateGameUI from GameActivity_kt_5lanes)
     private fun initializeUIElements() {
         gameLayout = findViewById(R.id.game_layout)
         carImageView = findViewById(R.id.car_image)
@@ -173,7 +164,7 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
         pauseButton = findViewById(R.id.pause_button)
         pauseScreenLayout = findViewById(R.id.pause_screen_layout)
         resumeButton = findViewById(R.id.resume_button)
-        distanceTextView = findViewById(R.id.distance_text) // Initialize Odometer TextView
+        distanceTextView = findViewById(R.id.distance_text)
     }
 
     private fun initializeSensors() {
@@ -189,14 +180,13 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
             rightButton.visibility = View.VISIBLE
         }
     }
-
     private fun initializeSoundPool() {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         soundPool = SoundPool.Builder()
-            .setMaxStreams(3) // Max simultaneous sounds
+            .setMaxStreams(3)
             .setAudioAttributes(audioAttributes)
             .build()
 
@@ -208,29 +198,24 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
                 Log.e(TAG, "Error loading sound $sampleId, status $status")
             }
         }
-        // Create a res/raw folder and add your sound files (e.g., crash.ogg, coin.ogg)
         try {
-            crashSoundId = soundPool.load(this, R.raw.crash, 1) // Make sure you have res/raw/crash.ogg (or .wav)
-            coinSoundId = soundPool.load(this, R.raw.coin, 1)   // Make sure you have res/raw/coin.ogg (or .wav)
+            crashSoundId = soundPool.load(this, R.raw.crash, 1)
+            coinSoundId = soundPool.load(this, R.raw.coin, 1)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading sounds from res/raw", e)
-            Toast.makeText(this, "Error loading game sounds.", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun playSound(soundId: Int) {
-        if (soundId != 0 && soundPoolLoadedCount >= totalSoundsToLoad) { // Check if specific sound ID is valid and all sounds loaded
+        if (soundId != 0 && soundPoolLoadedCount >= totalSoundsToLoad) {
             soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
         } else if (soundId == 0) {
             Log.w(TAG, "Attempted to play sound with ID 0")
-        } else {
-            Log.w(TAG, "Sounds not fully loaded, cannot play sound ID $soundId")
         }
     }
 
 
     private fun setupButtonListeners() {
-        // ... (same as before from GameActivity_kt_pause) ...
         leftButton.setOnClickListener { if (isGameEffectivelyRunning) moveCarLeft() }
         rightButton.setOnClickListener { if (isGameEffectivelyRunning) moveCarRight() }
         pauseButton.setOnClickListener { togglePauseGame() }
@@ -238,8 +223,7 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun togglePauseGame() {
-        // ... (same as before from GameActivity_kt_pause) ...
-        if (currentLives <= 0 && !isGamePausedManually) return // Don't allow pause/resume if game over and not already paused
+        if (currentLives <= 0 && !isGamePausedManually) return
 
         isGamePausedManually = !isGamePausedManually
         isGameEffectivelyRunning = !isGamePausedManually && currentLives > 0
@@ -264,17 +248,16 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
             Log.e(TAG, "Screen width is zero, cannot calculate lane positions.")
             return
         }
-        val lanePixelWidth = screenWidthPixels / MAX_LANES // ***** USE MAX_LANES *****
-        for (i in 0 until MAX_LANES) { // ***** USE MAX_LANES *****
+        val lanePixelWidth = screenWidthPixels / MAX_LANES
+        for (i in 0 until MAX_LANES) {
             laneCenterPositionsX[i] = (lanePixelWidth / 2) + (i * lanePixelWidth)
         }
         Log.d(TAG, "Calculated ${MAX_LANES} Lane Centers X: ${laneCenterPositionsX.joinToString()}")
     }
 
     private fun positionCarInCurrentLane() {
-        // ... (same as before, using the fix for centering) ...
         Log.d(TAG, "positionCarInCurrentLane() CALLED for lane: $currentCarLane")
-        if (currentCarLane < 0 || currentCarLane >= MAX_LANES || carVisualWidthPixels == 0) { // ***** USE MAX_LANES *****
+        if (currentCarLane < 0 || currentCarLane >= MAX_LANES || carVisualWidthPixels == 0) {
             Log.e(TAG, "CANNOT position car: Invalid lane ($currentCarLane for $MAX_LANES lanes), or car width ($carVisualWidthPixels), or screen width ($screenWidthPixels) is zero.")
             return
         }
@@ -292,18 +275,17 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun moveCarRight() {
-        if (currentCarLane < MAX_LANES - 1) { // ***** USE MAX_LANES - 1 *****
+        if (currentCarLane < MAX_LANES - 1) {
             currentCarLane++
             positionCarInCurrentLane()
         }
     }
 
     private fun startGame() {
-        // ... (same as before from GameActivity_kt_pause) ...
         Log.d(TAG, "Starting game...")
         currentScore = 0
         currentLives = INITIAL_LIVES
-        distanceTravelled = 0 // Reset odometer
+        distanceTravelled = 0
         isGamePausedManually = false
         isGameEffectivelyRunning = true
         pauseButton.setImageResource(R.drawable.ic_pause)
@@ -313,11 +295,10 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
 
         activeObstacles.forEach { gameLayout.removeView(it) }
         activeObstacles.clear()
-        activeCoins.forEach { gameLayout.removeView(it) } // Clear coins
+        activeCoins.forEach { gameLayout.removeView(it) }
         activeCoins.clear()
 
-
-        currentCarLane = MAX_LANES / 2 // Ensure car starts in the middle of 5 lanes
+        currentCarLane = MAX_LANES / 2
         positionCarInCurrentLane()
 
         gameLoopHandler.removeCallbacks(gameRunnable)
@@ -332,17 +313,14 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
                 gameLoopHandler.postDelayed(this, GAME_UPDATE_INTERVAL_MS)
                 return
             }
-
             val currentEffectiveSpeed = (BASE_OBSTACLE_SPEED_PIXELS_PER_TICK * dynamicBonusSpeedFactor).toInt()
-            distanceTravelled += currentEffectiveSpeed / 10 // Adjust scaling for "meters"
-
+            distanceTravelled += currentEffectiveSpeed / 15 // Adjusted scaling for "meters"
             moveAllObstacles(currentEffectiveSpeed)
-            moveAllCoins(currentEffectiveSpeed) // Move coins
+            moveAllCoins(currentEffectiveSpeed)
             checkAllCollisions()
-            checkCoinCollisions() // Check for coin collection
+            checkCoinCollisions()
             currentScore += SCORE_PER_TICK
             updateGameUI()
-
             gameLoopHandler.postDelayed(this, GAME_UPDATE_INTERVAL_MS)
         }
     }
@@ -353,10 +331,9 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
                 obstacleGenerationHandler.postDelayed(this, (OBSTACLE_GENERATION_INTERVAL_MS / baseSpeedFactor).toLong())
                 return
             }
-            // Randomly spawn obstacle or coin
-            if (Random.nextFloat() < 0.75) { // 75% chance to spawn obstacle
+            if (Random.nextFloat() < 0.75) {
                 spawnNewObstacle()
-            } else { // 25% chance to spawn coin
+            } else {
                 spawnNewCoin()
             }
             obstacleGenerationHandler.postDelayed(this, (OBSTACLE_GENERATION_INTERVAL_MS / baseSpeedFactor).toLong())
@@ -364,7 +341,6 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun spawnNewObstacle() {
-        // ... (same as before, but ensure it uses MAX_LANES for spawnLane) ...
         if (laneCenterPositionsX.all { it == 0 }) {
             Log.w(TAG, "Lanes not initialized, skipping obstacle spawn.")
             return
@@ -373,7 +349,7 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
         newObstacle.setImageResource(R.drawable.obstacle)
         val layoutParams = ConstraintLayout.LayoutParams(obstacleVisualSizePixels, obstacleVisualSizePixels)
         newObstacle.layoutParams = layoutParams
-        val spawnLane = Random.nextInt(MAX_LANES) // ***** USE MAX_LANES *****
+        val spawnLane = Random.nextInt(MAX_LANES)
         val obstacleCenterX = laneCenterPositionsX[spawnLane]
         newObstacle.translationX = (obstacleCenterX - obstacleVisualSizePixels / 2).toFloat()
         newObstacle.translationY = -obstacleVisualSizePixels.toFloat()
@@ -387,7 +363,7 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
             return
         }
         val newCoin = ImageView(this)
-        newCoin.setImageResource(R.drawable.coin) // Make sure you have res/drawable/coin.xml
+        newCoin.setImageResource(R.drawable.coin)
         val layoutParams = ConstraintLayout.LayoutParams(coinVisualSizePixels, coinVisualSizePixels)
         newCoin.layoutParams = layoutParams
         val spawnLane = Random.nextInt(MAX_LANES)
@@ -398,13 +374,11 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
         activeCoins.add(newCoin)
     }
 
-
     private fun moveAllObstacles(currentSpeed: Int) {
         val iterator = activeObstacles.iterator()
         while (iterator.hasNext()) {
             val obstacle = iterator.next()
             obstacle.translationY += currentSpeed
-
             if (obstacle.translationY > gameLayout.height) {
                 gameLayout.removeView(obstacle)
                 iterator.remove()
@@ -421,14 +395,11 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
             if (coin.translationY > gameLayout.height) {
                 gameLayout.removeView(coin)
                 iterator.remove()
-                // No score if coin is missed
             }
         }
     }
 
-
-    private fun checkAllCollisions() { // Obstacle collisions
-        // ... (same as before from GameActivity_kt_pause) ...
+    private fun checkAllCollisions() {
         if (carVisualWidthPixels == 0 || carVisualHeightPixels == 0) return
         val carHitboxWidth = carVisualWidthPixels * CAR_HITBOX_SCALE_FACTOR
         val carHitboxHeight = carVisualHeightPixels * CAR_HITBOX_SCALE_FACTOR
@@ -442,7 +413,6 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
         val iterator = activeObstacles.iterator()
         while (iterator.hasNext()) {
             val obstacle = iterator.next()
-            // ... (rest of collision logic for obstacles, same as before) ...
             if (obstacle.width == 0 || obstacle.height == 0) continue
             val obstacleCurrentWidth = obstacle.width
             val obstacleCurrentHeight = obstacle.height
@@ -470,8 +440,7 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
 
     private fun checkCoinCollisions() {
         if (carVisualWidthPixels == 0 || carVisualHeightPixels == 0) return
-
-        val carHitboxWidth = carVisualWidthPixels * (CAR_HITBOX_SCALE_FACTOR + 0.1f) // Slightly larger hitbox for coins
+        val carHitboxWidth = carVisualWidthPixels * (CAR_HITBOX_SCALE_FACTOR + 0.1f)
         val carHitboxHeight = carVisualHeightPixels * (CAR_HITBOX_SCALE_FACTOR + 0.1f)
         val carVisualLeft = carImageView.x
         val carVisualTop = carImageView.y
@@ -484,8 +453,6 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
         while (iterator.hasNext()) {
             val coin = iterator.next()
             if (coin.width == 0 || coin.height == 0) continue
-
-            // Assuming coin hitbox is its visual size for simplicity
             val coinVisualLeft = coin.x
             val coinVisualTop = coin.y
             val coinVisualRight = coin.x + coin.width
@@ -495,23 +462,20 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
                 carHitboxLeft < coinVisualRight &&
                 carHitboxBottom > coinVisualTop &&
                 carHitboxTop < coinVisualBottom) {
-
                 Log.i(TAG, "Coin collected!")
                 currentScore += SCORE_PER_COIN
                 playSound(coinSoundId)
                 Toast.makeText(this, getString(R.string.coin_collected), Toast.LENGTH_SHORT).show()
                 gameLayout.removeView(coin)
                 iterator.remove()
-                // updateGameUI() will be called by the main game loop
             }
         }
     }
 
-
     private fun processCollision() {
         currentLives--
         triggerVibration()
-        playSound(crashSoundId) // Play crash sound
+        playSound(crashSoundId)
         Toast.makeText(this, getString(R.string.crash_message, currentLives), Toast.LENGTH_SHORT).show()
         if (currentLives <= 0) {
             gameOver()
@@ -519,11 +483,17 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun triggerVibration() {
-        // ... (same as before) ...
+        if (vibrator?.hasVibrator() == true) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(200)
+            }
+        }
     }
 
     private fun gameOver() {
-        // ... (same as before, including saveScoreToList and updateHighScore) ...
         Log.i(TAG, "Game Over. Final Score: $currentScore. Distance: $distanceTravelled")
         isGameEffectivelyRunning = false
         saveScoreToList(currentScore)
@@ -535,85 +505,243 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun updateHighScore() {
-        // ... (same as before) ...
+        val sharedPref = getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
+        val highScore = sharedPref.getInt("high_score", 0)
+        if (currentScore > highScore) {
+            with(sharedPref.edit()) {
+                putInt("high_score", currentScore)
+                apply()
+            }
+        }
     }
 
     private fun saveScoreToList(score: Int) {
-        // ... (same as before) ...
+        val sharedPref = getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
+        val gson = Gson()
+        val jsonScores = sharedPref.getString(PREVIOUS_SCORES_KEY, null)
+        val type = object : TypeToken<MutableList<Int>>() {}.type
+        val previousScores: MutableList<Int> = if (jsonScores != null) {
+            gson.fromJson(jsonScores, type)
+        } else {
+            mutableListOf()
+        }
+        previousScores.add(0, score)
+        while (previousScores.size > MAX_SAVED_SCORES) {
+            previousScores.removeAt(previousScores.size - 1)
+        }
+        val updatedJsonScores = gson.toJson(previousScores)
+        with(sharedPref.edit()) {
+            putString(PREVIOUS_SCORES_KEY, updatedJsonScores)
+            apply()
+        }
     }
 
     private fun updateGameUI() {
         scoreTextView.text = getString(R.string.score_format, currentScore)
         livesTextView.text = getString(R.string.lives_format, currentLives)
-        distanceTextView.text = getString(R.string.distance_format, distanceTravelled) // Update odometer
+        distanceTextView.text = getString(R.string.distance_format, distanceTravelled)
     }
 
+
+    // SensorEventListener Methods
+//    override fun onSensorChanged(event: SensorEvent?) {
+//        Log.d(TAG, "SensorEventListener.onSensorChanged() CALLED with event: $event")
+//        if (currentGameMode != MainActivity.MODE_SENSOR || !isGameEffectivelyRunning || event == null) {
+//            return
+//        }
+//
+//        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+//            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.size)
+//        } else if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+//            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.size)
+//        }
+//
+//        SensorManager.getRotationMatrix(rotationMatrix, null, accelerometerReading, magnetometerReading)
+//        val orientationAnglesRad = FloatArray(3) // Keep original radians for pitch
+//        SensorManager.getOrientation(rotationMatrix, orientationAnglesRad)
+//
+//        // Convert to degrees for easier thresholding and logging
+//        val rollDegrees = Math.toDegrees(orientationAnglesRad[2].toDouble()).toFloat() // Roll: Left/Right tilt.
+//        val pitchDegrees = Math.toDegrees(orientationAnglesRad[1].toDouble()).toFloat() // Pitch: Front/Back tilt.
+//
+//        Log.d(TAG, "Sensor - Raw Roll: ${orientationAnglesRad[2]} rad (${rollDegrees} deg), Raw Pitch: ${orientationAnglesRad[1]} rad (${pitchDegrees} deg)")
+//
+//        // --- Tilt to Move Car (Roll) ---
+//        val currentTime = System.currentTimeMillis()
+//        if (currentTime - lastSensorLaneUpdateTime > SENSOR_UPDATE_DEBOUNCE_MS) {
+//            var targetLane = currentCarLane // Default to current lane
+//
+//            // Android's standard 'roll':
+//            // - Positive roll: Left side of device tilts UP (device rolls to its RIGHT)
+//            // - Negative roll: Right side of device tilts UP (device rolls to its LEFT)
+//            // So, to move car LEFT (lane index decreases), user tilts device to THEIR LEFT (left edge down, right edge up) -> NEGATIVE roll.
+//            // To move car RIGHT (lane index increases), user tilts device to THEIR RIGHT (right edge down, left edge up) -> POSITIVE roll.
+//
+//            if (abs(rollDegrees) > TILT_DEAD_ZONE_DEGREES) {
+//                // Normalize the roll from -ROLL_SENSITIVITY_DEGREES to +ROLL_SENSITIVITY_DEGREES into a -1 to +1 range
+//                // where -1 is full tilt for moving to lane 0, and +1 is full tilt for moving to lane MAX_LANES - 1.
+//                // This interpretation means negative roll (tilt left) should map to left lanes, positive roll (tilt right) to right lanes.
+//
+//                // If rollDegrees is negative (tilt left for user), we want a negative factor.
+//                // If rollDegrees is positive (tilt right for user), we want a positive factor.
+//                val normalizedEffectiveRoll = (rollDegrees / ROLL_SENSITIVITY_DEGREES).coerceIn(-1.0f, 1.0f)
+//
+//                // Calculate the number of lanes to shift from the center lane
+//                // MAX_LANES / 2 gives the span of lanes on one side of the center.
+//                // For 5 lanes, center is lane 2. Span is 2 lanes to the left (0,1) and 2 to the right (3,4).
+//                val laneShift = (normalizedEffectiveRoll * (MAX_LANES / 2.0f))
+//
+//                targetLane = (MAX_LANES / 2 + laneShift).toInt().coerceIn(0, MAX_LANES - 1)
+//
+//                Log.d(TAG, "Tilt - RollDeg: $rollDegrees, NormRoll: $normalizedEffectiveRoll, LaneShift: $laneShift, TargetLane: $targetLane")
+//            }
+//
+//
+//            if (targetLane != currentCarLane) {
+//                currentCarLane = targetLane
+//                positionCarInCurrentLane()
+//                lastSensorLaneUpdateTime = currentTime
+//                Log.d(TAG, "Sensor moved to lane: $currentCarLane")
+//            }
+//        }
+//
+//        // --- Bonus: Tilt for Speed (Pitch) ---
+//        if (abs(pitchDegrees) > PITCH_SPEED_THRESHOLD_DEGREES) {
+//            if (pitchDegrees < -PITCH_SPEED_THRESHOLD_DEGREES) { // Tilt forward (top of phone away) - Faster
+//                dynamicBonusSpeedFactor = SPEED_FACTOR_BONUS_FAST
+//                Log.d(TAG, "Tilt Speed: FASTER (Pitch: $pitchDegrees)")
+//            } else if (pitchDegrees > PITCH_SPEED_THRESHOLD_DEGREES) { // Tilt back (top of phone towards you) - Slower
+//                dynamicBonusSpeedFactor = SPEED_FACTOR_BONUS_SLOW
+//                Log.d(TAG, "Tilt Speed: SLOWER (Pitch: $pitchDegrees)")
+//            }
+//        } else {
+//            if (dynamicBonusSpeedFactor != 1.0f) { // Only log if it changes back to normal
+//                Log.d(TAG, "Tilt Speed: NORMAL (Pitch: $pitchDegrees)")
+//            }
+//            dynamicBonusSpeedFactor = 1.0f // Normal speed
+//        }
+//    }
+    // SensorEventListener Methods
     // SensorEventListener Methods
     override fun onSensorChanged(event: SensorEvent?) {
-        if (currentGameMode != MainActivity.MODE_SENSOR || !isGameEffectivelyRunning || event == null) {
+        // User-added log to confirm entry
+        Log.d(TAG, "SensorEventListener.onSensorChanged() CALLED with event sensor type: ${event?.sensor?.type}")
+
+        if (currentGameMode != MainActivity.MODE_SENSOR) {
+            Log.v(TAG, "onSensorChanged: Not in sensor mode. Current mode: $currentGameMode")
+            return
+        }
+        if (!isGameEffectivelyRunning) {
+            Log.v(TAG, "onSensorChanged: Game not effectively running.")
+            return
+        }
+        if (event == null) {
+            Log.v(TAG, "onSensorChanged: Event is null.")
             return
         }
 
-        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
-            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.size)
-        } else if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
-            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.size)
+        // Process sensor data to get orientation
+        when (event.sensor.type) {
+            Sensor.TYPE_ACCELEROMETER -> {
+                System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.size)
+            }
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.size)
+            }
+            else -> {
+                // Log.v(TAG, "onSensorChanged: Event from other unhandled sensor type: ${event.sensor.type}")
+                return // Only process accel and mag events for orientation
+            }
         }
+
+        // We need both accelerometer and magnetometer readings to get accurate orientation
+        // SensorManager.getOrientation() relies on SensorManager.getRotationMatrix()
+        // which typically needs both. Ensure both sensors are providing data.
+        // If magnetometer is not present or not providing data, orientation might be less stable or inaccurate.
 
         SensorManager.getRotationMatrix(rotationMatrix, null, accelerometerReading, magnetometerReading)
-        SensorManager.getOrientation(rotationMatrix, orientationAngles)
+        val orientationAnglesRad = FloatArray(3) // Output for orientation angles in radians
+        SensorManager.getOrientation(rotationMatrix, orientationAnglesRad)
 
-        val roll = orientationAngles[2] // Roll: Left/Right tilt. Positive when device tilts left.
-        val pitch = orientationAngles[1] // Pitch: Front/Back tilt. Positive when bottom tilts up.
+        // Convert radians to degrees for easier interpretation
+        // orientationAnglesRad[0]: Azimuth (not used here)
+        // orientationAnglesRad[1]: Pitch (forward/backward tilt)
+        // orientationAnglesRad[2]: Roll (left/right tilt)
+        val rollDegrees = Math.toDegrees(orientationAnglesRad[2].toDouble()).toFloat()
+        val pitchDegrees = Math.toDegrees(orientationAnglesRad[1].toDouble()).toFloat()
 
-        // --- Tilt to Move Car ---
-        // Debounce sensor updates for lane changes to avoid overly sensitive movement
+        // --- DEBOUNCE: Only process sensor data periodically to avoid jitter ---
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastSensorLaneUpdateTime > 150) { // Update lane max ~6 times/sec
-            var desiredLaneBasedOnRoll = MAX_LANES / 2 // Default to middle lane
-            // Map roll to a lane index. If roll is negative (tilt right), index increases.
-            // If roll is positive (tilt left), index decreases.
-            if (kotlin.math.abs(roll) > TILT_DEAD_ZONE) { // Only consider significant tilts
-                // Map roll from -SENSOR_SENSITIVITY_ROLL_MAP to +SENSOR_SENSITIVITY_ROLL_MAP
-                // to an offset from the middle lane.
-                // Example: roll of -0.5 (strong right tilt) should push towards MAX_LANES-1
-                // roll of +0.5 (strong left tilt) should push towards 0
-                val normalizedRoll = (roll / SENSOR_SENSITIVITY_ROLL_MAP).coerceIn(-1.0f, 1.0f)
-                // This normalizedRoll is -1 (full right) to +1 (full left)
-                // We want to map this to a lane change delta.
-                // Middle lane is MAX_LANES / 2.
-                // If normalizedRoll is -1, we want lane MAX_LANES -1. Delta = (MAX_LANES-1) - (MAX_LANES/2)
-                // If normalizedRoll is +1, we want lane 0. Delta = 0 - (MAX_LANES/2)
-                // So, delta is roughly -normalizedRoll * (MAX_LANES / 2)
-                val laneOffset = (-normalizedRoll * (MAX_LANES / 2.0f)).toInt()
-                desiredLaneBasedOnRoll = (MAX_LANES / 2) + laneOffset
-            }
+        if (currentTime - lastSensorLaneUpdateTime < SENSOR_UPDATE_DEBOUNCE_MS) {
+            // This log can be very frequent, use Log.v (verbose) or comment out if too noisy
+            // Log.v(TAG, "onSensorChanged: Debounced. Diff: ${currentTime - lastSensorLaneUpdateTime}ms")
+            return // Not enough time has passed, skip this update
+        }
+        lastSensorLaneUpdateTime = currentTime // Update the time for the next check
 
-            val newLane = desiredLaneBasedOnRoll.coerceIn(0, MAX_LANES - 1)
 
-            if (newLane != currentCarLane) {
-                currentCarLane = newLane
-                positionCarInCurrentLane()
-                lastSensorLaneUpdateTime = currentTime
-                Log.d(TAG, "Sensor moved to lane: $currentCarLane based on roll: $roll")
-            }
+        // --- LOGGING: The most important log to check! ---
+        Log.d(TAG, "Sensor Readout -> Roll: ${String.format("%.1f", rollDegrees)} deg, Pitch: ${String.format("%.1f", pitchDegrees)} deg")
+
+
+        // --- TILT-TO-LANE LOGIC (ROLL) ---
+        // Standard Android 'roll':
+        // - Tilting device's LEFT edge DOWN (to steer left) -> NEGATIVE rollDegrees.
+        // - Tilting device's RIGHT edge DOWN (to steer right) -> POSITIVE rollDegrees.
+        var targetLane = currentCarLane // Default to the current lane
+
+        // Define the tilt angle thresholds (in degrees) for each lane change for 5 lanes
+        // These are examples, you'll need to TUNE them.
+        val strongTiltLeft = -15.0f  // e.g., more than 15 degrees left tilt
+        val moderateTiltLeft = -5.0f // e.g., between 5 and 15 degrees left tilt
+        val moderateTiltRight = 5.0f // e.g., between 5 and 15 degrees right tilt
+        val strongTiltRight = 15.0f  // e.g., more than 15 degrees right tilt
+        // The dead zone is implicitly between -moderateTiltLeft and +moderateTiltRight if they are symmetrical like +/-5.0f
+
+        if (rollDegrees < strongTiltLeft) {                // Strongest Left Tilt
+            targetLane = 0
+        } else if (rollDegrees < moderateTiltLeft) {       // Moderate Left Tilt
+            targetLane = 1
+        } else if (rollDegrees > strongTiltRight) {        // Strongest Right Tilt
+            targetLane = 4
+        } else if (rollDegrees > moderateTiltRight) {      // Moderate Right Tilt
+            targetLane = 3
+        } else {                                           // Center Zone (within dead zone or slight tilts)
+            targetLane = 2 // Middle lane
+        }
+
+        // If the calculated target lane is different, update the car's position
+        if (targetLane != currentCarLane) {
+            Log.i(TAG, "TILT ACTION -> Roll: ${String.format("%.1f", rollDegrees)} deg => Changing lane from $currentCarLane to $targetLane")
+            currentCarLane = targetLane
+            positionCarInCurrentLane()
+        } else {
+            // This log helps see if the tilt is recognized but not enough to change lanes
+            Log.d(TAG, "Tilt Check -> Roll: ${String.format("%.1f", rollDegrees)} deg => TargetLane $targetLane is same as CurrentLane $currentCarLane. No lane change.")
         }
 
 
-        // --- Bonus: Tilt for Speed ---
-        if (kotlin.math.abs(pitch) > PITCH_SPEED_THRESHOLD) {
-            if (pitch < -PITCH_SPEED_THRESHOLD) { // Tilt forward (top of phone away) - Faster
+        // --- Bonus: Tilt for Speed (Pitch) ---
+        // (Using kotlin.math.abs)
+        if (abs(pitchDegrees) > PITCH_SPEED_THRESHOLD_DEGREES) {
+            if (pitchDegrees < -PITCH_SPEED_THRESHOLD_DEGREES) { // Tilt forward (top of phone away) - Faster
+                if (dynamicBonusSpeedFactor != SPEED_FACTOR_BONUS_FAST) Log.d(TAG, "Tilt Speed: FASTER (Pitch: ${String.format("%.1f", pitchDegrees)} deg)")
                 dynamicBonusSpeedFactor = SPEED_FACTOR_BONUS_FAST
-            } else if (pitch > PITCH_SPEED_THRESHOLD) { // Tilt back (top of phone towards you) - Slower
+            } else if (pitchDegrees > PITCH_SPEED_THRESHOLD_DEGREES) { // Tilt back (top of phone towards you) - Slower
+                if (dynamicBonusSpeedFactor != SPEED_FACTOR_BONUS_SLOW) Log.d(TAG, "Tilt Speed: SLOWER (Pitch: ${String.format("%.1f", pitchDegrees)} deg)")
                 dynamicBonusSpeedFactor = SPEED_FACTOR_BONUS_SLOW
             }
         } else {
+            if (dynamicBonusSpeedFactor != 1.0f) { // Only log if it changes back to normal
+                Log.d(TAG, "Tilt Speed: NORMAL (Pitch: ${String.format("%.1f", pitchDegrees)} deg)")
+            }
             dynamicBonusSpeedFactor = 1.0f // Normal speed
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) { /* Not used */ }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     override fun onResume() {
         super.onResume()
         if (!isGamePausedManually && currentLives > 0 && screenWidthPixels > 0) {
@@ -626,6 +754,7 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
             if (currentGameMode == MainActivity.MODE_SENSOR) {
                 accelerometer?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
                 magnetometer?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+                Log.d(TAG, "Sensor listeners REGISTERED.")
             }
         } else if (isGamePausedManually) {
             pauseButton.setImageResource(R.drawable.ic_play)
@@ -636,24 +765,25 @@ class GameActivity : AppCompatActivity(), SensorEventListener {
     override fun onPause() {
         super.onPause()
         if (isGameEffectivelyRunning) {
-            isGameEffectivelyRunning = false
-            pauseButton.setImageResource(R.drawable.ic_play) // Show play if game was running
+            isGameEffectivelyRunning = false // This will stop game loops
+            pauseButton.setImageResource(R.drawable.ic_play)
+            Log.d(TAG, "Activity Paused: Game was running, now effectively paused.")
         }
-        // Always unregister sensor listeners on pause if they were registered
-        if (::sensorManager.isInitialized) { // Check if sensorManager was initialized
+        if (::sensorManager.isInitialized) {
             sensorManager.unregisterListener(this)
+            Log.d(TAG, "Sensor listeners UNREGISTERED.")
         }
-        // Handlers will stop checking isGameEffectivelyRunning
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "GameActivity destroyed. Cleaning up handlers.")
         isGameEffectivelyRunning = false
         gameLoopHandler.removeCallbacksAndMessages(null)
         obstacleGenerationHandler.removeCallbacksAndMessages(null)
         if (::sensorManager.isInitialized) {
             sensorManager.unregisterListener(this)
         }
-        soundPool.release() // Release SoundPool resources
+        soundPool.release()
     }
 }
